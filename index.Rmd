@@ -406,7 +406,7 @@ m.icecreams <- leaflet() %>%
     overlayGroups = c('Sentinel-2 RGB', 'Legend: Class', 'Legend: Seagrass', 'Legend: NDVI', 'Legend: Percent cover (%)', 'Legend: Probability'),
     options = layersControlOptions(collapsed = FALSE)
   ) %>%
-  hideGroup(c('Legend: Seagrass', 'Legend: NDVI', 'Legend: Percent cover (%)', 'Legend: Probability'))
+  hideGroup(c('Sentinel-2 RGB', 'Legend: Seagrass', 'Legend: NDVI', 'Legend: Percent cover (%)', 'Legend: Probability'))
 m.icecreams
 ```
 

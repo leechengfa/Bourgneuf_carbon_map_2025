@@ -478,6 +478,9 @@ extracted.rocky.summarised <- extracted.rocky %>%
 # Plot
 pal.icecreams <- c('#ded4c3','#59260b','#c6c97c','#8ca271','#ddac74','#a9665e','#ca474f','#9ec8c7','#b8dc70')
 
+extracted.ymin <- 0.12
+extracted.ymax <- 0.31
+
 p_extracted.rocky.combined <- extracted.rocky.summarised %>%
   filter(wavelength < 900) %>%
   ggplot(aes(x = wavelength, y = mean, colour = Out_Class, fill = Out_Class)) +
@@ -486,6 +489,7 @@ p_extracted.rocky.combined <- extracted.rocky.summarised %>%
     scale_colour_manual("Class", values = pal.icecreams, drop = FALSE) +
     scale_fill_manual(values = pal.icecreams) +
     xlab('Wavelength') + ylab('Value') +
+    ylim(c(extracted.ymin, extracted.ymax)) +
     ggtitle("Comparison")
 
 p_extracted.rocky.facet <- extracted.rocky.summarised %>%
@@ -496,6 +500,7 @@ p_extracted.rocky.facet <- extracted.rocky.summarised %>%
     scale_colour_manual("Class", values = pal.icecreams, drop = FALSE) +
     scale_fill_manual(values = pal.icecreams) +
     xlab('Wavelength') + ylab('Value') +
+    ylim(c(extracted.ymin, extracted.ymax)) +
     facet_wrap(Out_Class ~ .)
 
 p_extracted.rocky.combined + p_extracted.rocky.facet
@@ -560,6 +565,7 @@ p_extracted.meadow.combined <- extracted.meadow.summarised %>%
     scale_colour_manual("Class", values = pal.icecreams, drop = FALSE) +
     scale_fill_manual(values = pal.icecreams) +
     xlab('Wavelength') + ylab('Value') +
+    ylim(c(extracted.ymin, extracted.ymax)) +
     ggtitle("Comparison")
 
 p_extracted.meadow.facet <- extracted.meadow.summarised %>%
@@ -570,6 +576,7 @@ p_extracted.meadow.facet <- extracted.meadow.summarised %>%
     scale_colour_manual("Class", values = pal.icecreams, drop = FALSE) +
     scale_fill_manual(values = pal.icecreams) +
     xlab('Wavelength') + ylab('Value') +
+    ylim(c(extracted.ymin, extracted.ymax)) +
     facet_wrap(Out_Class ~ .)
 
 p_extracted.meadow.combined + p_extracted.meadow.facet

@@ -19,12 +19,14 @@ library(dplyr)
 library(tidyr)
 # library(purrr)
 library(gganimate)
-# library(tidyterra)
+library(tidyterra)
 # library(ggbasemap)
 library(leaflet)
+library(leafem)
 library(viridis)
 library(terra)
 library(ggplot2)
+library(patchwork)
 ```
 
 This page documents the results of the _Zostera noltii_ seagrass carbon mapping work at Bourgneuf Bay. This includes work done in:
@@ -142,9 +144,9 @@ for (n in phenology$tile.name) {
   pheno.ndvi[pheno.icecreams$Seagrass_Cover < 20] <- NA
   pheno.ndvi[pheno.ndvi < 0.2] <- NA
 
-  phenology$ndvi.mean[phenology$tile.name == n] <- global(pheno.ndvi, fun = 'mean', na.rm = TRUE)
-  phenology$ndvi.sd[phenology$tile.name == n] <- global(pheno.ndvi, fun = 'sd', na.rm = TRUE)
-  phenology$totalCover[phenology$tile.name == n] <- global(pheno.icecreams$Seagrass_Cover, fun = 'sum', na.rm = TRUE)
+  phenology$ndvi.mean[phenology$tile.name == n] <- global(pheno.ndvi, fun = 'mean', na.rm = TRUE) %>% unlist()
+  phenology$ndvi.sd[phenology$tile.name == n] <- global(pheno.ndvi, fun = 'sd', na.rm = TRUE) %>% unlist()
+  phenology$totalCover[phenology$tile.name == n] <- global(pheno.icecreams$Seagrass_Cover, fun = 'sum', na.rm = TRUE) %>% unlist()
 }
 
 ## Inefficient approach
@@ -285,6 +287,16 @@ addLegend_decreasing <- function (map, position = c("topright", "bottomright", "
         }
 ```
 
+```{r s2}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+map.s2 <- rast('data/s2/S2C_MSIL2A_20250825_stack.tif') 
+  names(map.s2) <- paste0('B', c(seq(1:8), '8A', seq(9,12)))
+```
+
 ```{r icecreams}
 #| echo: false
 #| error: false
@@ -294,6 +306,7 @@ addLegend_decreasing <- function (map, position = c("topright", "bottomright", "
 pal.icecreams <- c('#ded4c3','#59260b','#c6c97c','#8ca271','#ddac74','#a9665e','#ca474f','#9ec8c7','#b8dc70')
 
 map.class <- import.icecreams('data/ice_creams_prediction/S2C_MSIL2A_20250825T105641_N0511_R094_T30TWT_20250825T154713_Pred_BFRD_V1_3.tif')
+# map.class <- import.icecreams('data/ice_creams_prediction/S2B_MSIL2A_20210920T105639_N0500_R094_T30TWT_20230121T144508_Pred_BFRD_V1_3.tif')
   levels(map.class$Out_Class) <- data.frame(id=1:9, cover = labels.icecreams)
 
 pal.class <- colorFactor(pal.icecreams, domain = 1:9, na.color = "transparent")
@@ -308,11 +321,21 @@ pal.class <- colorFactor(pal.icecreams, domain = 1:9, na.color = "transparent")
 map.class.seagrass <- map.class
   map.class.seagrass$Out_Class[map.class.seagrass$Out_Class != 4] <- NA
   levels(map.class.seagrass$Out_Class) <- data.frame(id=4, cover = labels.icecreams[4])
-  
+
 # mask out pixels with low class probability
+# mask_class_low_quality <- function(class_map, ClassProb_th_lower, ClassProb_th_upper, Seagrass_Cover_th_lower, Seagrass_Cover_th_upper) {
+#   output <- class_map %>%
+#     mask((class_map$Class_Probs >= ClassProb_th_lower & class_map$Class_Probs <= ClassProb_th_upper), inverse = TRUE, maskvalues = 1) %>%
+#     mask((class_map$Seagrass_Cover >= Seagrass_Cover_th_lower & class_map$Seagrass_Cover <= Seagrass_Cover_th_upper), inverse = TRUE, maskvalues = 1)
+#   
+#   return(output %>% terra::subset("Out_Class"))
+# }
+
 map.class.seagrass <- map.class.seagrass %>%
   mask(map.class$Class_Probs >= th.classProb, inverse = TRUE, maskvalues = 1) %>%
   mask(map.class$Seagrass_Cover >= th.spc, inverse = TRUE, maskvalues = 1)
+
+# map.class.seagrass <- mask_class_low_quality(map.class.seagrass, th.classProb, 1, th.spc, 100)
 ```
 
 ```{r ndvi}
@@ -322,6 +345,7 @@ map.class.seagrass <- map.class.seagrass %>%
 #| warning: false
 
 map.ndvi <- import.ndvi('data/ndvi/S2C_MSIL2A_20250825T105641_N0511_R094_T30TWT_20250825T154713_ndvi.tif')
+# map.ndvi <- import.ndvi('data/ndvi/S2B_MSIL2A_20210920T105639_N0500_R094_T30TWT_20230121T144508_ndvi.tif')
 
 pal.ndvi <- colorNumeric(c('white','darkgreen'), domain = c(0, 1), na.color = "transparent")
 ```
@@ -355,6 +379,8 @@ pal.unc <- colorNumeric(viridis_pal(option = 'D')(100), domain = c(0, 1), na.col
 m.icecreams <- leaflet() %>%
   addProviderTiles(providers$CartoDB.PositronNoLabels) %>%
   setView(map_centre[1], map_centre[2], 12) %>%
+  # s2 basemap
+  addRasterRGB(map.s2, r = 4, g = 3, b = 2, quantiles = c(0, 0.99), group = 'Sentinel-2 RGB') %>% ## set 0.99 as 1.00 is too dark
   # ice creams class map
   addRasterImage(map.class, colors = pal.class, group = 'Classification map') %>%
   addLegend(position = 'bottomleft', colors = pal.icecreams, values = 1:9, labels = labels.icecreams, opacity = 1, group = 'Legend: Class') %>%
@@ -377,13 +403,177 @@ m.icecreams <- leaflet() %>%
   addLayersControl(
     baseGroups = c('Classification map', 'Seagrass map', 'NDVI', 'Seagrass percent cover', 'Seagrass probability'),
     # overlayGroups = c('Sample sites', 'Legend: Class', 'Legend: Seagrass', 'Legend: NDVI', 'Legend: Percent cover (%)', 'Legend: Probability'),
-    overlayGroups = c('Legend: Class', 'Legend: Seagrass', 'Legend: NDVI', 'Legend: Percent cover (%)', 'Legend: Probability'),
+    overlayGroups = c('Sentinel-2 RGB', 'Legend: Class', 'Legend: Seagrass', 'Legend: NDVI', 'Legend: Percent cover (%)', 'Legend: Probability'),
     options = layersControlOptions(collapsed = FALSE)
   ) %>%
   hideGroup(c('Legend: Seagrass', 'Legend: NDVI', 'Legend: Percent cover (%)', 'Legend: Probability'))
 m.icecreams
 ```
 
+Seagrass meadows are also predicted by the ICE CREAMS model in the northern, rocky areas for this image. An inspection of the spectral signatures of the pixels there was then conducted (Figure \@ref(fig:icecreamsSpectralProfile)).
+
+```{r icecreamsSpectralProfileRockyArea}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+#| fig.width: 11
+#| fig.cap: Selected pixel spectral signatures of the offshore rocky area in the north. The plot on the left is the combined plot for all available classes while the plot(s) on the right are the standalone spectral signatures of each available class. Ten pixels of the seagrass and non-seagrass classes were randomly selected and averaged for comparison. All selected pixels have a class probability of at least 0.85.
+
+extent_rocky <- rbind(
+  data.frame(x = -2.1706541069999985, y = 46.97065821038579),
+  data.frame(x = -2.11562138534483, y = 46.98387330473062),
+  data.frame(x = -2.1182463013448296, y = 47.008493206523724),
+  data.frame(x = -2.1710161643793087, y = 47.00722600569614),
+  data.frame(x = -2.2002522977586167, y = 46.98731284983407), 
+  data.frame(x = -2.1706541069999985, y = 46.97065821038579)
+) %>% 
+  st_as_sf(coords = c('x','y'), crs = crs(stations)) %>%
+  summarise(geometry = st_combine(geometry)) %>%
+  st_cast("POLYGON") %>%
+  st_transform(crs(map.class))
+
+map.rocky <- map.class %>%
+  crop(extent_rocky)
+
+# pixel quality separation
+th.classProb.max <- 1
+th.classProb.mid <- 0.5
+th.classProb.low <- 0.2
+map.rocky.highQA <- map.rocky %>%
+  mask((map.rocky$Class_Probs >= th.classProb & map.rocky$Class_Probs <= th.classProb.max), inverse = TRUE, maskvalues = 1) 
+# map.rocky.midQA <- map.rocky %>%
+#   mask((map.rocky$Class_Probs >= th.classProb.mid & map.rocky$Class_Probs <= th.classProb), inverse = TRUE, maskvalues = 1) %>%
+#   terra::subset('Out_Class')
+# map.rocky.lowQA <- map.rocky %>%
+#   mask((map.rocky$Class_Probs >= th.classProb.low & map.rocky$Class_Probs <= th.classProb.mid), inverse = TRUE, maskvalues = 1) %>%
+#   terra::subset('Out_Class')
+
+# merge with S2 image to get spectral data
+map.rocky.comb <- c(subset(map.rocky.highQA, "Out_Class"), crop(map.s2/10000, extent_rocky))
+
+# extract samples
+stratified_coords.rocky <- spatSample(map.rocky.comb$Out_Class, size = 10, method = 'stratified', xy = TRUE, na.rm = TRUE, as_df = TRUE) %>%
+  as.data.frame() %>%
+  st_as_sf(coords = c('x','y'), crs = crs(map.rocky.comb))
+
+extracted.rocky <- extract(map.rocky.comb, stratified_coords.rocky)
+
+wv <- data.frame('band' = c('B1','B2','B3','B4','B5','B6','B7','B8','B8A','B9','B11','B12'),
+                 'wavelength' = c(443, 496, 560, 664, 703, 740, 782, 835, 864, 945, 1613, 2202))
+
+# summarise to average band values with spread (sd) and then plot with ribbon plot.
+extracted.rocky.summarised <- extracted.rocky %>%
+  select(-ID, -B10) %>% ## no B10 band in Sentinel-2 SR, so its presence is a mistake
+  summarise(.by = Out_Class,
+            B1_mean = mean(B1), B2_mean = mean(B2), B3_mean = mean(B3), B1_mean = mean(B4), B1_mean = mean(B4), B5_mean = mean(B5), B6_mean = mean(B6),
+            B7_mean = mean(B7), B8_mean = mean(B8), B8A_mean = mean(B8A), B9_mean = mean(B9), B11_mean = mean(B11), B12_mean = mean(B12),
+            B1_sd = sd(B1), B2_sd = sd(B2), B3_sd = sd(B3), B1_sd = sd(B4), B1_sd = sd(B4), B5_sd = sd(B5), B6_sd = sd(B6),
+            B7_sd = sd(B7), B8_sd = sd(B8), B8A_sd = sd(B8A), B9_sd = sd(B9), B11_sd = sd(B11), B12_sd = sd(B12),
+            ) %>%
+  pivot_longer(cols = contains('B'), names_sep = "_", names_to = c("band", "summary"), values_to = "value") %>%
+  pivot_wider(names_from = summary, values_from = value) %>%
+  left_join(wv, by = join_by(band))
+
+# Plot
+pal.icecreams <- c('#ded4c3','#59260b','#c6c97c','#8ca271','#ddac74','#a9665e','#ca474f','#9ec8c7','#b8dc70')
+
+p_extracted.rocky.combined <- extracted.rocky.summarised %>%
+  filter(wavelength < 900) %>%
+  ggplot(aes(x = wavelength, y = mean, colour = Out_Class, fill = Out_Class)) +
+    geom_ribbon(aes(ymin = mean - sd, ymax = mean + sd), alpha = 0.2, colour = NA, show.legend = FALSE) +
+    geom_line(linewidth = 1.5, show.legend = FALSE) +
+    scale_colour_manual("Class", values = pal.icecreams, drop = FALSE) +
+    scale_fill_manual(values = pal.icecreams) +
+    xlab('Wavelength') + ylab('Value') +
+    ggtitle("Comparison")
+
+p_extracted.rocky.facet <- extracted.rocky.summarised %>%
+  filter(wavelength < 900) %>%
+  ggplot(aes(x = wavelength, y = mean, colour = Out_Class, fill = Out_Class)) +
+    geom_ribbon(aes(ymin = mean - sd, ymax = mean + sd), alpha = 0.2, colour = NA, show.legend = FALSE) +
+    geom_line(linewidth = 1.5) +
+    scale_colour_manual("Class", values = pal.icecreams, drop = FALSE) +
+    scale_fill_manual(values = pal.icecreams) +
+    xlab('Wavelength') + ylab('Value') +
+    facet_wrap(Out_Class ~ .)
+
+p_extracted.rocky.combined + p_extracted.rocky.facet
+```
+
+These spectral signatures can be compared to the spectral signature of dense seagrasses in a known persistent meadow.
+
+```{r icecreamsSpectralProfileDenseMeadow}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+#| fig.width: 11
+#| fig.cap: Selected pixel spectral signatures of a nearshore dense and persistent seagrass meadow. The plot on the left is the combined plot for all available classes while the plot(s) on the right are the standalone spectral signatures of each available class. Ten pixels of the seagrass were randomly selected and averaged for comparison. For this meadow, there were no other classes predicted. All selected pixels have a class probability of at least 0.85.
+
+extent_meadow <- rbind(
+  data.frame(x = -2.1710012262300205, y = 46.95952038916181),
+  data.frame(x = -2.171195697247627, y = 46.95923821552843),
+  data.frame(x = -2.172393028610922, y = 46.9597034207078),
+  data.frame(x = -2.17213754707799, y = 46.96002753907048),
+  data.frame(x = -2.1710012262300205, y = 46.95952038916181)
+) %>% 
+  st_as_sf(coords = c('x','y'), crs = crs(stations)) %>%
+  summarise(geometry = st_combine(geometry)) %>%
+  st_cast("POLYGON") %>%
+  st_transform(crs(map.class))
+
+map.meadow <- map.class %>%
+  crop(extent_meadow)
+
+map.meadow.highQA <- map.meadow %>%
+  mask((map.meadow$Class_Probs >= th.classProb & map.meadow$Class_Probs <= th.classProb.max), inverse = TRUE, maskvalues = 1) 
+
+# merge with S2 image to get spectral data
+map.meadow.comb <- c(subset(map.meadow.highQA, "Out_Class"), crop(map.s2/10000, extent_meadow))
+
+# extract samples
+stratified_coords.meadow <- spatSample(map.meadow.comb$Out_Class, size = 10, method = 'stratified', xy = TRUE, na.rm = TRUE, as_df = TRUE) %>%
+  as.data.frame() %>%
+  st_as_sf(coords = c('x','y'), crs = crs(map.meadow.comb))
+
+extracted.meadow <- extract(map.meadow.comb, stratified_coords.meadow)
+
+# summarise to average band values with spread (sd) and then plot with ribbon plot.
+extracted.meadow.summarised <- extracted.meadow %>%
+  select(-ID, -B10) %>% ## no B10 band in Sentinel-2 SR, so its presence is a mistake
+  summarise(.by = Out_Class,
+            B1_mean = mean(B1), B2_mean = mean(B2), B3_mean = mean(B3), B1_mean = mean(B4), B1_mean = mean(B4), B5_mean = mean(B5), B6_mean = mean(B6),
+            B7_mean = mean(B7), B8_mean = mean(B8), B8A_mean = mean(B8A), B9_mean = mean(B9), B11_mean = mean(B11), B12_mean = mean(B12),
+            B1_sd = sd(B1), B2_sd = sd(B2), B3_sd = sd(B3), B1_sd = sd(B4), B1_sd = sd(B4), B5_sd = sd(B5), B6_sd = sd(B6),
+            B7_sd = sd(B7), B8_sd = sd(B8), B8A_sd = sd(B8A), B9_sd = sd(B9), B11_sd = sd(B11), B12_sd = sd(B12),
+            ) %>%
+  pivot_longer(cols = contains('B'), names_sep = "_", names_to = c("band", "summary"), values_to = "value") %>%
+  pivot_wider(names_from = summary, values_from = value) %>%
+  left_join(wv, by = join_by(band))
+
+p_extracted.meadow.combined <- extracted.meadow.summarised %>%
+  filter(wavelength < 900) %>%
+  ggplot(aes(x = wavelength, y = mean, colour = Out_Class, fill = Out_Class)) +
+    geom_ribbon(aes(ymin = mean - sd, ymax = mean + sd), alpha = 0.2, colour = NA, show.legend = FALSE) +
+    geom_line(linewidth = 1.5, show.legend = FALSE) +
+    scale_colour_manual("Class", values = pal.icecreams, drop = FALSE) +
+    scale_fill_manual(values = pal.icecreams) +
+    xlab('Wavelength') + ylab('Value') +
+    ggtitle("Comparison")
+
+p_extracted.meadow.facet <- extracted.meadow.summarised %>%
+  filter(wavelength < 900) %>%
+  ggplot(aes(x = wavelength, y = mean, colour = Out_Class, fill = Out_Class)) +
+    geom_ribbon(aes(ymin = mean - sd, ymax = mean + sd), alpha = 0.2, colour = NA, show.legend = FALSE) +
+    geom_line(linewidth = 1.5) +
+    scale_colour_manual("Class", values = pal.icecreams, drop = FALSE) +
+    scale_fill_manual(values = pal.icecreams) +
+    xlab('Wavelength') + ylab('Value') +
+    facet_wrap(Out_Class ~ .)
+
+p_extracted.meadow.combined + p_extracted.meadow.facet
+```
 
 # Seasonal change
 
@@ -550,6 +740,22 @@ k = 39
 # }
 ```
 
+```{r phenologytenyearsdateVSextent}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+#| fig.width: 10
+#| fig.cap: Comparison of predicted total seagrass extent versus the DOY, based on the modelling done in the previous figure.
+ 
+ld_phenoextent_minmax$doy <- as.Date(ld_phenoextent_minmax$date, "%d-%b")
+
+ggplot(ld_phenoextent_minmax, aes(x = doy, y = y)) +
+  geom_point() +
+  xlab('DOY') + ylab(bquote('Total seagrass extent '(km^2))) +
+  scale_x_date(limits = c(as.Date('2026-01-01'), as.Date('2026-12-31')), date_labels = '%d %b')
+```
+
 ```{r phenologymapseagrassgif}
 #| echo: false
 #| error: false
@@ -603,6 +809,8 @@ k = 39
 #     enter_fade() %>%
 #       animate(nframes = length(unique(pheno.df.icecreams$date)), fps = 1)
 ```
+
+
 
 # Biomass prediction 
 
